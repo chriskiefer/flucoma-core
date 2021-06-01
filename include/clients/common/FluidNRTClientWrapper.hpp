@@ -608,9 +608,9 @@ struct StreamingControl
       }
     }
 
-    std::cout << "==============================================\n";
-    std::cout << "COMBINED OUTPUT PRE-BUFFER\n";
-    std::cout << outputData[0] << std::endl; 
+    // std::cout << "==============================================\n";
+    // std::cout << "COMBINED OUTPUT PRE-BUFFER\n";
+    // std::cout << outputData[0] << std::endl; 
     BufferAdaptor::Access thisOutput(outputBuffers[0]);
 
     index latencyHops = client.latency() / client.controlRate();

@@ -91,17 +91,17 @@ public:
     assert(asSigned(output.size()) >= FluidBaseClient::controlChannelsOut() &&
            "Too few output channels");
 
-    std::cout << "==============================================\n"
-              << "PARAMS:\n"
-              << "\tALGO\t" << get<kAlgorithm>() << "\n"
-              << "\tMINFREQ\t" <<get<kMinFreq>() << "\n"
-              << "\tMAXFREQ\t" <<get<kMaxFreq>() << "\n"
-              << "\tUNIT\t" <<get<kUnit>() << "\n"
-              << "\tWIN\t" <<get<kFFT>().winSize() << "\n"
-              << "\tHOP\t" <<get<kFFT>().hopSize() << "\n"
-              << "\tFFT\t" <<get<kFFT>().fftSize() << "\n"
-              << "\tFFT\t" <<get<kFFT>().frameSize() << "\n"
-              << "\tMAX FFT\t" << get<kMaxFFTSize>() << "\n\n\n\n"; 
+//    std::cout << "==============================================\n"
+//              << "PARAMS:\n"
+//              << "\tALGO\t" << get<kAlgorithm>() << "\n"
+//              << "\tMINFREQ\t" <<get<kMinFreq>() << "\n"
+//              << "\tMAXFREQ\t" <<get<kMaxFreq>() << "\n"
+//              << "\tUNIT\t" <<get<kUnit>() << "\n"
+//              << "\tWIN\t" <<get<kFFT>().winSize() << "\n"
+//              << "\tHOP\t" <<get<kFFT>().hopSize() << "\n"
+//              << "\tFFT\t" <<get<kFFT>().fftSize() << "\n"
+//              << "\tFFT\t" <<get<kFFT>().frameSize() << "\n"
+//              << "\tMAX FFT\t" << get<kMaxFFTSize>() << "\n\n\n\n"; 
 
     if (mParamTracker.changed(get<kFFT>().frameSize(), sampleRate()))
     {
@@ -113,7 +113,7 @@ public:
         mParams, input, c, [&](ComplexMatrixView in) {
           algorithm::STFT::magnitude(in.row(0), mMagnitude);
           
-          std::cout << "INPUT MAGS\n" << mMagnitude << "\n\n\n\n"; 
+          // std::cout << "INPUT MAGS\n" << mMagnitude << "\n\n\n\n"; 
           
           switch (get<kAlgorithm>())
           {
@@ -140,15 +140,15 @@ public:
       output[0](0) = mDescriptors(0);
     }
     
-    std::cout << "====================================\n";
-    std::cout << "INPUT\n";
-    std::cout << input[0] << std::endl; 
-    std::cout << "\n\nOUPUT\n\n"; 
-    std::cout << "Pitch: " 
-              <<  mDescriptors(0) 
-              << "\tConf: " 
-              << mDescriptors(1) 
-              << std::endl; 
+    // std::cout << "====================================\n";
+    // std::cout << "INPUT\n";
+    // std::cout << input[0] << std::endl; 
+    // std::cout << "\n\nOUPUT\n\n"; 
+    // std::cout << "Pitch: " 
+    //           <<  mDescriptors(0) 
+    //           << "\tConf: " 
+    //           << mDescriptors(1) 
+    //           << std::endl; 
     
     // pitch confidence
     output[1](0) = static_cast<T>(mDescriptors(1));

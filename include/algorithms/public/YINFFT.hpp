@@ -48,6 +48,10 @@ public:
       tmpSum += yin(i);
       yin(i) *= i / tmpSum;
     }
+    
+    std::cout << "TMPSUM\t" << tmpSum << std::endl; 
+    
+    
     double pitch = 0;
     double pitchConfidence = 0;
     if (tmpSum > 0)
@@ -59,11 +63,18 @@ public:
       if (minBin > yinFlip.size() - 1) minBin = yinFlip.size() - 1;
       if (maxBin > yinFlip.size() - minBin - 1)
         maxBin = yinFlip.size() - minBin - 1;
+      
+      std::cout << "MAX BIN\t" << maxBin
+              << "\nMIN BIN\t" << minBin << std::endl;   
+        
       if (maxBin > minBin)
       {
         yinFlip = yinFlip.segment(minBin, maxBin - minBin);
 
         auto vec = pd.process(yinFlip, 1, yinFlip.minCoeff());
+        
+        std::cout << "PEAKS DETECTED\t" << vec.size() << std::endl; 
+        
         if (vec.size() > 0)
         {
           pitch = sampleRate / (minBin + vec[0].first);
