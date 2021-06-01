@@ -124,6 +124,17 @@ public:
     else {
       output[0](0) = mDescriptors(0);
     }
+    
+    std::cout << "====================================\n";
+    std::cout << "INPUT\n";
+    std::cout << input[0] << std::endl; 
+    std::cout << "\n\nOUPUT\n\n"; 
+    std::cout << "Pitch: " 
+              <<  mDescriptors(0) 
+              << "\tConf: " 
+              << mDescriptors(1) 
+              << std::endl; 
+    
     // pitch confidence
     output[1](0) = static_cast<T>(mDescriptors(1));
   }

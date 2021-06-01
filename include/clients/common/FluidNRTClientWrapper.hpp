@@ -560,7 +560,9 @@ struct StreamingControl
 
     std::fill_n(std::back_inserter(inputData), inputBuffers.size(),
                 HostMatrix(nChans, nFrames + totalPadding));
-
+    std::cout << "===========================================\n"; 
+    std::cout << "PADDING AMOUNT " << paddedLength << std::endl;      
+                
     HostMatrix outputData(nChans * nFeatures, nHops);
     double     sampleRate{0};
     // Copy input data
@@ -605,6 +607,9 @@ struct StreamingControl
       }
     }
 
+    std::cout << "==============================================\n";
+    std::cout << "COMBINED OUTPUT PRE-BUFFER\n";
+    std::cout << outputData[0] << std::endl; 
     BufferAdaptor::Access thisOutput(outputBuffers[0]);
 
     index latencyHops = client.latency() / client.controlRate();
@@ -622,6 +627,10 @@ struct StreamingControl
         thisOutput.samps(i + j * nFeatures) =
             outputData.row(i + j * nFeatures)(Slice(latencyHops, keepHops));
     }
+
+    std::cout << "==============================================\n";
+    std::cout << "COMBINED OUTPUT POST-BUFFER\n";
+    std::cout << thisOutput.allFrames() << std::endl; 
 
     return {};
   }
