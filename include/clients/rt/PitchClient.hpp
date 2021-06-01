@@ -112,6 +112,9 @@ public:
     mSTFTBufferedProcess.processInput(
         mParams, input, c, [&](ComplexMatrixView in) {
           algorithm::STFT::magnitude(in.row(0), mMagnitude);
+          
+          std::cout << "INPUT MAGS\n" << mMagnitude << "\n\n\n\n"; 
+          
           switch (get<kAlgorithm>())
           {
           case 0:

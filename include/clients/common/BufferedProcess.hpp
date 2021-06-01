@@ -242,6 +242,7 @@ public:
     mBufferedProcess.processInput(
         fftParams.winSize(), fftParams.hopSize(), c,
         [this, &processFunc, chansIn](RealMatrixView in) {
+          std::cout << "FRAME INPUT PRE STFT\n\n" << in << "\n\n";
           for (index i = 0; i < chansIn; ++i)
             mSTFT->processFrame(in.row(i), mSpectrumIn.row(i));
           processFunc(mSpectrumIn);
