@@ -61,7 +61,7 @@ public:
   using ParamSetViewType = ParameterSetView<ParamDescType>;
   std::reference_wrapper<ParamSetViewType> mParams;
 
-  void setParams(ParamSetViewType& p) { mParams = p; }
+  void setParams(ParamSetViewType& p) { std::cout << "+++++++++Pitch Client Updating Params\n";   mParams = p; }
 
   template <size_t N>
   auto& get() const
@@ -90,6 +90,18 @@ public:
     assert(FluidBaseClient::controlChannelsOut() && "No control channels");
     assert(asSigned(output.size()) >= FluidBaseClient::controlChannelsOut() &&
            "Too few output channels");
+
+    std::cout << "==============================================\n"
+              << "PARAMS:\n"
+              << "\tALGO\t" << get<kAlgorithm>() << "\n"
+              << "\tMINFREQ\t" <<get<kMinFreq>() << "\n"
+              << "\tMAXFREQ\t" <<get<kMaxFreq>() << "\n"
+              << "\tUNIT\t" <<get<kUnit>() << "\n"
+              << "\tWIN\t" <<get<kFFT>().winSize() << "\n"
+              << "\tHOP\t" <<get<kFFT>().hopSize() << "\n"
+              << "\tFFT\t" <<get<kFFT>().fftSize() << "\n"
+              << "\tFFT\t" <<get<kFFT>().frameSize() << "\n"
+              << "\tMAX FFT\t" << get<kMaxFFTSize>() << "\n\n\n\n"; 
 
     if (mParamTracker.changed(get<kFFT>().frameSize(), sampleRate()))
     {
@@ -142,6 +154,7 @@ public:
   index controlRate() { return get<kFFT>().hopSize(); }
   void  reset()
   {
+    std::cout << "+++++++ Client Reset()\n\n\n"; 
     mSTFTBufferedProcess.reset();
     cepstrumF0.init(get<kFFT>().frameSize());
     mMagnitude.resize(get<kFFT>().frameSize());

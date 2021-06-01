@@ -273,6 +273,7 @@ public:
     mRealTimeParams =
         RTParamSetViewType(RTClient::getParameterDescriptors(),
                            mParams.get().template subset<ParamOffset>());
+    std::cout << "+++++++++NRT Wrapper Setting Params\n"; 
     mClient.setParams(mRealTimeParams);
   }
 
