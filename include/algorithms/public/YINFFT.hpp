@@ -82,6 +82,9 @@ public:
         }
       }
     }
+    
+    std::cout << "PITCH\t" << pitch << "\nConf\t" << pitchConfidence << '\n'; 
+    
     output(0) = pitch;
     output(1) = pitchConfidence;
   }
