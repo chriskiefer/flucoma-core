@@ -9,75 +9,20 @@ under the European Union’s Horizon 2020 research and innovation programme
 
 */
 
+//TODO: pass thru ringbuf size param
+
 #pragma once
 
 #include "../util/FluidEigenMappings.hpp"
 #include "../../data/TensorTypes.hpp"
 #include <Eigen/Core>
 #include <cmath>
+#include "RingBuf.hpp"
 
 #include <unordered_map>
 
 namespace fluid {
 namespace algorithm {
-
-template <typename T,size_t N>
-class RingBuf {
-using ringBufType = Eigen::Array<T,N,1>;
-using winBufType = Eigen::Array<T,Eigen::Dynamic,1>;
-public:
-    RingBuf() {
-        // buf.resize(16);
-        buf.fill(0);
-        currBuf.resize(512);
-    }
-    // RingBuf(size_t W) {
-    //     buf.resize(W);
-    //     buf.fill(0);
-    // }
-    // void setSize(size_t N) {
-    //     buf.resize(N);
-    //     buf.fill(0);
-    //     idx=0;
-    // }
-
-    void push(T x) {
-        buf[idx] = x;
-        idx++;
-        if (idx==buf.size()) {
-            idx=0;
-        }
-    }
-    
-    size_t size() {return buf.size();}
-    
-    winBufType& getBuffer(unsigned int winSize) {
-        if (winSize != buf.size())
-          currBuf.resize(winSize);
-        int targidx=0;
-        if (idx > winSize) {
-            for(int i=idx-winSize; i < idx; i++, targidx++) {
-                currBuf[targidx] = buf[i];
-            }
-        }else{
-            //first chunk
-            for(int i=buf.size()-(winSize-idx); i < buf.size(); i++, targidx++) {
-                currBuf[targidx] = buf[i];
-            }
-            //second chunk
-            for(int i=0; i < idx; i++, targidx++) {
-                currBuf[targidx] = buf[i];
-            }
-        }
-        return currBuf;
-    }
-    
-private:
-    ringBufType buf;
-    size_t idx=0;
-    winBufType currBuf;
-
-};
 
 
 
@@ -155,7 +100,7 @@ public:
   }
 
 private:
-  RingBuf<unsigned int,512> ringBuf;
+  RingBuf<unsigned int> ringBuf;
   size_t hopCounter=0;
   double entropy=0;
   bool mInitialsed = 0;

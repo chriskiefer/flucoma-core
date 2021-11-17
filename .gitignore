@@ -2,3 +2,7 @@ build
 **/.DS_Store
 /examples/out*.wav
 .vs/
+
+.vscode/settings.json
+
+.vscode/
