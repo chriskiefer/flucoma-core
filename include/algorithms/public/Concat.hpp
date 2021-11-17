@@ -76,9 +76,9 @@ public:
   bool isInitialised() {return mInitialsed;}
   
   double processSample(const double audioIn, const double segmentTrig, const double featureTrig, 
-  RealVector &feature, 
-  const long historyWindowLength, const long historyWindowOffset, 
-  const double fadeTime, const double speed)
+    RealVector &feature, 
+    const long historyWindowLength, const long historyWindowOffset, 
+    const double fadeTime, const double speed, const unsigned int matchingAlgo)
   {
     using namespace std;
     double audioOut = 0.0;
@@ -127,11 +127,17 @@ public:
         // cout << "Seaching " << db.size() << " db entries\n";
         double minDist = std::numeric_limits<double>::max();
         size_t closest=0;
+        size_t offsetInSamples = (static_cast<size_t>(historyWindowOffset / 1000) * sampleRate);
+        size_t searchWindowStart = segmentStartTS > offsetInSamples ? segmentStartTS - offsetInSamples : 0;
+        size_t searchWindowEnd = searchWindowStart + (static_cast<size_t>(historyWindowLength / 1000) * sampleRate);
+        // cout << "searching from " << searchWindowStart << " to " << searchWindowEnd << endl;
         for (size_t i_db=0; i_db < db.size(); i_db++) {
-          double dist = euclideanDistance(mFeatureAvgBuffer, db[i_db]);
-          if (dist < minDist) {
-            minDist = dist;
-            closest = i_db;
+          if (timestamps[i_db] >= searchWindowStart && timestamps[i_db] < searchWindowEnd) {
+            double dist = distanceFunctions[matchingAlgo](mFeatureAvgBuffer, db[i_db]);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = i_db;
+            }
           }
           // cout << dist << ",";
         }
@@ -139,7 +145,7 @@ public:
         //segmentstartTS marks the end of the last segment in the database
         size_t matchStartOffset = segmentStartTS - timestamps[closest];
         size_t matchSize = closest == db.size()-1 ? matchStartOffset : timestamps[closest+1] - timestamps[closest];
-        cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
+        // cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
 
         auto segmentCopy = audioRingBuf.getBuffer(matchSize, matchStartOffset);
         segmentQueue.push_back(segmentCopy);
@@ -156,7 +162,7 @@ public:
       //add feature to db
       db.push_back(mFeatureAvgBuffer);
       timestamps.push_back(segmentStartTS);
-      cout << "Pushing feature, db size " << db.size() << endl;
+      // cout << "Pushing feature, db size " << db.size() << endl;
 
 
 
@@ -209,7 +215,7 @@ public:
               if (segmentAmp[segIdx] >= 1.0) {
                 segmentAmpMod[segIdx] = 0;
                 segmentFadeState[segIdx] = fadeStates::MID;
-                cout << "mid\n";
+                // cout << "mid\n";
               }
             }
           break;
@@ -227,7 +233,7 @@ public:
                 }
               }
               if (segmentFadeState[segIdx] == fadeStates::FADING_OUT) {
-                cout << "out\n";
+                // cout << "out\n";
                 segmentAmpMod[segIdx] = -1.0 / segmentFadeLenSamples[segIdx];
                 //only segment? -> add copy to the queue
                 if (segmentQueue.size() == 1) {
@@ -280,6 +286,14 @@ public:
 
 private:
   enum fadeStates {FADING_IN, MID, FADING_OUT};
+  struct soundSegment {
+    RingBuf<double>::winBufType segmentAudio;
+    double position;
+    double ampMod;
+    double amp;
+    double fadeLenSamples;
+    fadeStates fadeState;
+  };
   RingBuf<double> audioRingBuf;
   bool mInitialsed = 0;
   bool mFirstFeature=1;
@@ -304,7 +318,8 @@ private:
   std::deque<double> segmentAmp;
   std::deque<double> segmentFadeLenSamples;
   std::deque<fadeStates> segmentFadeState;
-  
+
+  std::deque<soundSegment> mSegmentQ;
 
 };
 
