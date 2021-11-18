@@ -146,15 +146,23 @@ public:
         size_t matchStartOffset = segmentStartTS - timestamps[closest];
         size_t matchSize = closest == db.size()-1 ? matchStartOffset : timestamps[closest+1] - timestamps[closest];
         // cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
+        soundSegment newSegment;
+        newSegment.segmentAudio =  audioRingBuf.getBuffer(matchSize, matchStartOffset);
+        newSegment.position = 0;
+        newSegment.fadeLenSamples = (fadeTime / 1000.0) * sampleRate;
+        newSegment.ampMod = 1.0 / newSegment.fadeLenSamples;
+        newSegment.amp = 0.0;
+        newSegment.fadeState = fadeStates::FADING_IN;
+        mSegmentQ.push_back(newSegment);
 
-        auto segmentCopy = audioRingBuf.getBuffer(matchSize, matchStartOffset);
-        segmentQueue.push_back(segmentCopy);
-        segmentPosition.push_back(0);
-        double fadeTimeSamples = (fadeTime / 1000.0) * sampleRate;
-        segmentFadeLenSamples.push_back(fadeTimeSamples);
-        segmentAmpMod.push_back(1.0 / fadeTimeSamples);
-        segmentAmp.push_back(0);
-        segmentFadeState.push_back(fadeStates::FADING_IN);
+        // auto segmentCopy = audioRingBuf.getBuffer(matchSize, matchStartOffset);
+        // segmentQueue.push_back(segmentCopy);
+        // segmentPosition.push_back(0);
+        // double fadeTimeSamples = (fadeTime / 1000.0) * sampleRate;
+        // segmentFadeLenSamples.push_back(fadeTimeSamples);
+        // segmentAmpMod.push_back(1.0 / fadeTimeSamples);
+        // segmentAmp.push_back(0);
+        // segmentFadeState.push_back(fadeStates::FADING_IN);
       }
 
 
@@ -181,40 +189,40 @@ public:
     //-------------- SYNTHESIS
     audioRingBuf.push(audioIn);
 
-    if (segmentQueue.size() > 0) {
+    if (mSegmentQ.size() > 0) {
       //calculate sample with linear interpolation
       audioOut = 0;
       //for each segment in the queue
-      for(size_t segIdx=0; segIdx < segmentQueue.size(); segIdx++) {
+      for(size_t segIdx=0; segIdx < mSegmentQ.size(); segIdx++) {
         double seqmentSample=0.0;
-        size_t sampleIndex = static_cast<size_t>(segmentPosition[segIdx]);
+        size_t sampleIndex = static_cast<size_t>(mSegmentQ[segIdx].position);
         if (speed >= 0) {
-          double i0 = segmentPosition[segIdx] - sampleIndex;
+          double i0 = mSegmentQ[segIdx].position - sampleIndex;
           double i1 = 1.0 - i0;
           size_t nextSampleIndex = sampleIndex + 1;
-          if (nextSampleIndex == segmentQueue[segIdx].size()) nextSampleIndex = 0;
-          seqmentSample = (i0 * segmentQueue[segIdx][sampleIndex]) + (i1 * segmentQueue[segIdx][nextSampleIndex]);
+          if (nextSampleIndex == mSegmentQ[segIdx].segmentAudio.size()) nextSampleIndex = 0;
+          seqmentSample = (i0 * mSegmentQ[segIdx].segmentAudio[sampleIndex]) + (i1 * mSegmentQ[segIdx].segmentAudio[nextSampleIndex]);
         }else{
           size_t firstSampleIndex = sampleIndex-1;
           if (firstSampleIndex < 0) {
-            firstSampleIndex = segmentQueue[segIdx].size()-1;
+            firstSampleIndex = mSegmentQ[segIdx].segmentAudio.size()-1;
           }
-          double i1 = segmentPosition[segIdx] - sampleIndex;
+          double i1 = mSegmentQ[segIdx].position - sampleIndex;
           double i0 = 1.0 - i0;
-          seqmentSample = (i0 * segmentQueue[segIdx][firstSampleIndex]) + (i1 * segmentQueue[segIdx][sampleIndex]);
+          seqmentSample = (i0 * mSegmentQ[segIdx].segmentAudio[firstSampleIndex]) + (i1 * mSegmentQ[segIdx].segmentAudio[sampleIndex]);
         }
 
         //cross-fades
-        seqmentSample *= sqrt(segmentAmp[segIdx]);
+        seqmentSample *= sqrt(mSegmentQ[segIdx].amp);
 
-        segmentAmp[segIdx] += segmentAmpMod[segIdx];
+        mSegmentQ[segIdx].amp += mSegmentQ[segIdx].ampMod;
 
-        switch(segmentFadeState[segIdx]) {
+        switch(mSegmentQ[segIdx].fadeState) {
           case fadeStates::FADING_IN:
             {
-              if (segmentAmp[segIdx] >= 1.0) {
-                segmentAmpMod[segIdx] = 0;
-                segmentFadeState[segIdx] = fadeStates::MID;
+              if (mSegmentQ[segIdx].amp >= 1.0) {
+                mSegmentQ[segIdx].ampMod = 0;
+                mSegmentQ[segIdx].fadeState = fadeStates::MID;
                 // cout << "mid\n";
               }
             }
@@ -223,18 +231,18 @@ public:
             {
               //when to trigger fade out?
               if (speed >= 0) {
-                if (segmentQueue[segIdx].size() - segmentPosition[segIdx] < segmentFadeLenSamples[segIdx] ) {
-                  segmentFadeState[segIdx] = fadeStates::FADING_OUT;
+                if (mSegmentQ[segIdx].segmentAudio.size() - mSegmentQ[segIdx].position < mSegmentQ[segIdx].fadeLenSamples ) {
+                  mSegmentQ[segIdx].fadeState = fadeStates::FADING_OUT;
                 }
 
               }else{
-                if (segmentPosition[segIdx] < segmentFadeLenSamples[segIdx] ) {
-                  segmentFadeState[segIdx] = fadeStates::FADING_OUT;
+                if (mSegmentQ[segIdx].position < mSegmentQ[segIdx].fadeLenSamples ) {
+                  mSegmentQ[segIdx].fadeState = fadeStates::FADING_OUT;
                 }
               }
-              if (segmentFadeState[segIdx] == fadeStates::FADING_OUT) {
+              if (mSegmentQ[segIdx].fadeState == fadeStates::FADING_OUT) {
                 // cout << "out\n";
-                segmentAmpMod[segIdx] = -1.0 / segmentFadeLenSamples[segIdx];
+                mSegmentQ[segIdx].ampMod = -1.0 / mSegmentQ[segIdx].fadeLenSamples;
                 //only segment? -> add copy to the queue
                 if (segmentQueue.size() == 1) {
                 }
@@ -245,12 +253,13 @@ public:
           case fadeStates::FADING_OUT:
             if (segmentAmp[segIdx] <= 0.0) {
               //remove segment
-              segmentQueue.pop_front();
-              segmentPosition.pop_front();
-              segmentAmp.pop_front();
-              segmentAmpMod.pop_front();
-              segmentFadeLenSamples.pop_front();
-              segmentFadeState.pop_front();
+              mSegmentQ.pop_front();
+              // segmentQueue.pop_front();
+              // segmentPosition.pop_front();
+              // segmentAmp.pop_front();
+              // segmentAmpMod.pop_front();
+              // segmentFadeLenSamples.pop_front();
+              // segmentFadeState.pop_front();
             }
 
           break;
@@ -260,11 +269,11 @@ public:
         
 
         //adjust position
-        segmentPosition[segIdx]+= speed;
-        if (segmentPosition[segIdx]>=segmentQueue[segIdx].size()) {
-          segmentPosition[segIdx] -= segmentQueue[segIdx].size();
-        }else if (segmentPosition[segIdx] < 0){
-          segmentPosition[segIdx] += segmentQueue[segIdx].size();
+        mSegmentQ[segIdx].position+= speed;
+        if (mSegmentQ[segIdx].position >= mSegmentQ[segIdx].segmentAudio.size()) {
+          mSegmentQ[segIdx].position -= mSegmentQ[segIdx].segmentAudio.size();
+        }else if (mSegmentQ[segIdx].position < 0){
+          mSegmentQ[segIdx].position += mSegmentQ[segIdx].segmentAudio.size();
         }
         
         audioOut += seqmentSample;
