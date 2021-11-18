@@ -146,23 +146,24 @@ public:
         size_t matchStartOffset = segmentStartTS - timestamps[closest];
         size_t matchSize = closest == db.size()-1 ? matchStartOffset : timestamps[closest+1] - timestamps[closest];
         // cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
+
+        //fade out the other segments in the queue
+        for(size_t segIdx = 0; segIdx < mSegmentQ.size(); segIdx++) {
+          mSegmentQ[segIdx].startFadeOut();
+        }
+
         soundSegment newSegment;
         newSegment.segmentAudio =  audioRingBuf.getBuffer(matchSize, matchStartOffset);
         newSegment.position = 0;
         newSegment.fadeLenSamples = (fadeTime / 1000.0) * sampleRate;
-        newSegment.ampMod = 1.0 / newSegment.fadeLenSamples;
-        newSegment.amp = 0.0;
-        newSegment.fadeState = fadeStates::FADING_IN;
+        // newSegment.ampMod = 1.0 / newSegment.fadeLenSamples;
+        // newSegment.amp = 0.0;
+        // newSegment.fadeState = fadeStates::FADING_IN;
+        newSegment.startFadeIn();
         mSegmentQ.push_back(newSegment);
 
-        // auto segmentCopy = audioRingBuf.getBuffer(matchSize, matchStartOffset);
-        // segmentQueue.push_back(segmentCopy);
-        // segmentPosition.push_back(0);
-        // double fadeTimeSamples = (fadeTime / 1000.0) * sampleRate;
-        // segmentFadeLenSamples.push_back(fadeTimeSamples);
-        // segmentAmpMod.push_back(1.0 / fadeTimeSamples);
-        // segmentAmp.push_back(0);
-        // segmentFadeState.push_back(fadeStates::FADING_IN);
+
+
       }
 
 
@@ -190,10 +191,10 @@ public:
     audioRingBuf.push(audioIn);
 
     if (mSegmentQ.size() > 0) {
-      //calculate sample with linear interpolation
       audioOut = 0;
       //for each segment in the queue
       for(size_t segIdx=0; segIdx < mSegmentQ.size(); segIdx++) {
+        //calculate sample with linear interpolation
         double seqmentSample=0.0;
         size_t sampleIndex = static_cast<size_t>(mSegmentQ[segIdx].position);
         if (speed >= 0) {
@@ -212,7 +213,7 @@ public:
           seqmentSample = (i0 * mSegmentQ[segIdx].segmentAudio[firstSampleIndex]) + (i1 * mSegmentQ[segIdx].segmentAudio[sampleIndex]);
         }
 
-        //cross-fades
+        //equal power cross-fades
         seqmentSample *= sqrt(mSegmentQ[segIdx].amp);
 
         mSegmentQ[segIdx].amp += mSegmentQ[segIdx].ampMod;
@@ -232,34 +233,31 @@ public:
               //when to trigger fade out?
               if (speed >= 0) {
                 if (mSegmentQ[segIdx].segmentAudio.size() - mSegmentQ[segIdx].position < mSegmentQ[segIdx].fadeLenSamples ) {
-                  mSegmentQ[segIdx].fadeState = fadeStates::FADING_OUT;
+                  mSegmentQ[segIdx].startFadeOut();
                 }
 
               }else{
                 if (mSegmentQ[segIdx].position < mSegmentQ[segIdx].fadeLenSamples ) {
-                  mSegmentQ[segIdx].fadeState = fadeStates::FADING_OUT;
+                  mSegmentQ[segIdx].startFadeOut();
                 }
               }
               if (mSegmentQ[segIdx].fadeState == fadeStates::FADING_OUT) {
-                // cout << "out\n";
-                mSegmentQ[segIdx].ampMod = -1.0 / mSegmentQ[segIdx].fadeLenSamples;
                 //only segment? -> add copy to the queue
-                if (segmentQueue.size() == 1) {
+                if (mSegmentQ.size() == 1) {
+                  soundSegment segCopy = mSegmentQ[0];
+                  segCopy.startFadeIn();
+                  mSegmentQ.push_back(segCopy);  
                 }
               };
             }
           break;
 
           case fadeStates::FADING_OUT:
-            if (segmentAmp[segIdx] <= 0.0) {
+            //finished fading out?
+            if (mSegmentQ[segIdx].amp <= 0.0) {
               //remove segment
+              //TODO: fix bug - remove current seg, not front. Use iterator instead
               mSegmentQ.pop_front();
-              // segmentQueue.pop_front();
-              // segmentPosition.pop_front();
-              // segmentAmp.pop_front();
-              // segmentAmpMod.pop_front();
-              // segmentFadeLenSamples.pop_front();
-              // segmentFadeState.pop_front();
             }
 
           break;
@@ -270,6 +268,7 @@ public:
 
         //adjust position
         mSegmentQ[segIdx].position+= speed;
+        //loop if necessary
         if (mSegmentQ[segIdx].position >= mSegmentQ[segIdx].segmentAudio.size()) {
           mSegmentQ[segIdx].position -= mSegmentQ[segIdx].segmentAudio.size();
         }else if (mSegmentQ[segIdx].position < 0){
@@ -302,6 +301,17 @@ private:
     double amp;
     double fadeLenSamples;
     fadeStates fadeState;
+
+    void startFadeIn() {
+        ampMod = 1.0 / fadeLenSamples;
+        amp = 0.0;
+        fadeState = fadeStates::FADING_IN;
+    }
+
+    void startFadeOut() {
+      ampMod = -1.0 / fadeLenSamples;
+      fadeState = fadeStates::FADING_OUT;
+    }
   };
   RingBuf<double> audioRingBuf;
   bool mInitialsed = 0;
@@ -321,12 +331,12 @@ private:
   std::vector<distanceFunction> distanceFunctions;
   double sampleRate=44100;
   size_t mAudioRingLen;
-  std::deque<RingBuf<double>::winBufType> segmentQueue;
-  std::deque<double> segmentPosition;
-  std::deque<double> segmentAmpMod;
-  std::deque<double> segmentAmp;
-  std::deque<double> segmentFadeLenSamples;
-  std::deque<fadeStates> segmentFadeState;
+  // std::deque<RingBuf<double>::winBufType> segmentQueue;
+  // std::deque<double> segmentPosition;
+  // std::deque<double> segmentAmpMod;
+  // std::deque<double> segmentAmp;
+  // std::deque<double> segmentFadeLenSamples;
+  // std::deque<fadeStates> segmentFadeState;
 
   std::deque<soundSegment> mSegmentQ;
 
