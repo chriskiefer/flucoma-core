@@ -39,7 +39,8 @@ enum ConcatParamIndex {
   kHistoryWindowOffset,
   kFadeTime,
   kSpeed, 
-  kAlgo
+  kAlgo,
+  kRandomness
 };
 
 
@@ -52,7 +53,8 @@ constexpr auto ConcatParams = defineParameters(
     LongParam("historyWindowOffset", "History Window Offset (ms)", 100, Min(100)), 
     FloatParam("fadeTime", "Fade Time (ms)", 0, Min(0)),
     FloatParam("speed", "Playback Speed", 1.0),
-    LongParam("algo", "Matching Algorithm", 0, Min(0), Max(1))
+    LongParam("algo", "Matching Algorithm", 0, Min(0), Max(1)),
+    FloatParam("randomness", "Randomness", 0, Min(0), Max(1))
 );
 
 class ConcatClient : public FluidBaseClient, public AudioIn, public AudioOut
@@ -120,7 +122,8 @@ public:
           get<kHistoryWindowOffset>(),
           get<kFadeTime>(),
           get<kSpeed>(),
-          get<kAlgo>()
+          get<kAlgo>(),
+          get<kRandomness>()
       ));
       // output[0](i) = static_cast<T>(input[1](i));
     }

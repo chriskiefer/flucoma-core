@@ -20,6 +20,8 @@ Chris Kiefer, 2021
 #include <cmath>
 #include "RingBuf.hpp"
 #include <deque>
+#include <random>
+
 
 namespace fluid {
 namespace algorithm {
@@ -35,6 +37,7 @@ class Concat
 public:
   Concat()
   {
+    //next: add LSH distance
     euclideanDistance = [](RealVector &a, RealVector &b)
     {
       double dist = 0;
@@ -75,10 +78,11 @@ public:
 
   bool isInitialised() {return mInitialsed;}
   
-  double processSample(const double audioIn, const double segmentTrig, const double featureTrig, 
+  double processSample(const double audioIn, double segmentTrig, const double featureTrig, 
     RealVector &feature, 
     const long historyWindowLength, const long historyWindowOffset, 
-    const double fadeTime, const double speed, const unsigned int matchingAlgo)
+    const double fadeTime, const double speed, const unsigned int matchingAlgo,
+    const double randomness)
   {
     using namespace std;
     double audioOut = 0.0;
@@ -87,7 +91,10 @@ public:
       mLastFeatureTrig = featureTrig;
       mLastSegmentTrig = segmentTrig;
     }
-
+    //auto trig if starting to get too long
+    if (mSampleClock - segmentStartTS > (static_cast<size_t>(historyWindowLength / 1000) * sampleRate * 0.5)) {
+      segmentTrig=1;
+    }
 
     //-------------- ANALYSIS
     //feature?
@@ -126,25 +133,37 @@ public:
       if (db.size() > 0) {
         // cout << "Seaching " << db.size() << " db entries\n";
         double minDist = std::numeric_limits<double>::max();
-        size_t closest=0;
+        size_t selectedSegment=0;
         size_t offsetInSamples = (static_cast<size_t>(historyWindowOffset / 1000) * sampleRate);
         size_t searchWindowStart = segmentStartTS > offsetInSamples ? segmentStartTS - offsetInSamples : 0;
         size_t searchWindowEnd = searchWindowStart + (static_cast<size_t>(historyWindowLength / 1000) * sampleRate);
         // cout << "searching from " << searchWindowStart << " to " << searchWindowEnd << endl;
+        //keep list of distances for random selection
+        std::vector< std::pair<double, size_t> > distances;
         for (size_t i_db=0; i_db < db.size(); i_db++) {
           if (timestamps[i_db] >= searchWindowStart && timestamps[i_db] < searchWindowEnd) {
             double dist = distanceFunctions[matchingAlgo](mFeatureAvgBuffer, db[i_db]);
             if (dist < minDist) {
               minDist = dist;
-              closest = i_db;
+              selectedSegment = i_db;
+            }
+            if (randomness > 0.0) {
+              distances.push_back(std::make_pair(dist, i_db));
             }
           }
           // cout << dist << ",";
         }
+        if (randomness > 0.0) {
+          std::sort(distances.begin(), distances.end());
+          size_t maxIndex = static_cast<size_t>(round((distances.size()-1) * randomness));
+          std::uniform_int_distribution<int> distribution(0,maxIndex);
+          selectedSegment = distribution(mtrand);
+          cout << "r: " << selectedSegment << endl;
+        }
         // cout << endl;
         //segmentstartTS marks the end of the last segment in the database
-        size_t matchStartOffset = segmentStartTS - timestamps[closest];
-        size_t matchSize = closest == db.size()-1 ? matchStartOffset : timestamps[closest+1] - timestamps[closest];
+        size_t matchStartOffset = segmentStartTS - timestamps[selectedSegment];
+        size_t matchSize = selectedSegment == db.size()-1 ? matchStartOffset : timestamps[selectedSegment+1] - timestamps[selectedSegment];
         // cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
 
         //fade out the other segments in the queue
@@ -156,11 +175,13 @@ public:
         newSegment.segmentAudio =  audioRingBuf.getBuffer(matchSize, matchStartOffset);
         newSegment.position = 0;
         newSegment.fadeLenSamples = (fadeTime / 1000.0) * sampleRate;
+        newSegment.speed = speed;
         // newSegment.ampMod = 1.0 / newSegment.fadeLenSamples;
         // newSegment.amp = 0.0;
         // newSegment.fadeState = fadeStates::FADING_IN;
         newSegment.startFadeIn();
         mSegmentQ.push_back(newSegment);
+        // cout << "new seg, q size: " << mSegmentQ.size() << ", amp: " << newSegment.amp << endl;
 
 
 
@@ -197,7 +218,7 @@ public:
         //calculate sample with linear interpolation
         double seqmentSample=0.0;
         size_t sampleIndex = static_cast<size_t>(mSegmentQ[segIdx].position);
-        if (speed >= 0) {
+        if (mSegmentQ[segIdx].speed >= 0) {
           double i0 = mSegmentQ[segIdx].position - sampleIndex;
           double i1 = 1.0 - i0;
           size_t nextSampleIndex = sampleIndex + 1;
@@ -209,7 +230,7 @@ public:
             firstSampleIndex = mSegmentQ[segIdx].segmentAudio.size()-1;
           }
           double i1 = mSegmentQ[segIdx].position - sampleIndex;
-          double i0 = 1.0 - i0;
+          double i0 = 1.0 - i1;
           seqmentSample = (i0 * mSegmentQ[segIdx].segmentAudio[firstSampleIndex]) + (i1 * mSegmentQ[segIdx].segmentAudio[sampleIndex]);
         }
 
@@ -231,7 +252,7 @@ public:
           case fadeStates::MID:
             {
               //when to trigger fade out?
-              if (speed >= 0) {
+              if (mSegmentQ[segIdx].speed >= 0) {
                 if (mSegmentQ[segIdx].segmentAudio.size() - mSegmentQ[segIdx].position < mSegmentQ[segIdx].fadeLenSamples ) {
                   mSegmentQ[segIdx].startFadeOut();
                 }
@@ -244,7 +265,10 @@ public:
               if (mSegmentQ[segIdx].fadeState == fadeStates::FADING_OUT) {
                 //only segment? -> add copy to the queue
                 if (mSegmentQ.size() == 1) {
-                  soundSegment segCopy = mSegmentQ[0];
+                  // cout << "Cloning seg" << endl;
+
+                  soundSegment segCopy = mSegmentQ[segIdx];
+                  segCopy.position=0;
                   segCopy.startFadeIn();
                   mSegmentQ.push_back(segCopy);  
                 }
@@ -254,11 +278,11 @@ public:
 
           case fadeStates::FADING_OUT:
             //finished fading out?
-            if (mSegmentQ[segIdx].amp <= 0.0) {
-              //remove segment
-              //TODO: fix bug - remove current seg, not front. Use iterator instead
-              mSegmentQ.pop_front();
-            }
+            // if (mSegmentQ[segIdx].amp <= 0.0) {
+            //   //remove segment
+            //   //TODO: fix bug - remove current seg, not front. Use iterator instead
+            //   mSegmentQ.pop_front();
+            // }
 
           break;
         }
@@ -267,13 +291,19 @@ public:
         
 
         //adjust position
-        mSegmentQ[segIdx].position+= speed;
-        //loop if necessary
+        mSegmentQ[segIdx].position+= mSegmentQ[segIdx].speed;
+        //limit
         if (mSegmentQ[segIdx].position >= mSegmentQ[segIdx].segmentAudio.size()) {
-          mSegmentQ[segIdx].position -= mSegmentQ[segIdx].segmentAudio.size();
+          mSegmentQ[segIdx].position = mSegmentQ[segIdx].segmentAudio.size()-1;
         }else if (mSegmentQ[segIdx].position < 0){
-          mSegmentQ[segIdx].position += mSegmentQ[segIdx].segmentAudio.size();
+          mSegmentQ[segIdx].position=0;
         }
+        //loop if necessary
+        // if (mSegmentQ[segIdx].position >= mSegmentQ[segIdx].segmentAudio.size()) {
+        //   mSegmentQ[segIdx].position -= mSegmentQ[segIdx].segmentAudio.size();
+        // }else if (mSegmentQ[segIdx].position < 0){
+        //   mSegmentQ[segIdx].position += mSegmentQ[segIdx].segmentAudio.size();
+        // }
         
         audioOut += seqmentSample;
       }
@@ -282,6 +312,15 @@ public:
       audioOut = 0;
     }
     
+    //clear out old segments
+    for (auto it = mSegmentQ.begin(); it != mSegmentQ.end(); ) {
+        if (it->fadeState == fadeStates::FADING_OUT && it->amp <= 0) {
+            // cout << "Clearing seg, size: " << mSegmentQ.size() << ", amp: " << it->amp << endl;
+            it = mSegmentQ.erase(it);
+        } else {
+            ++it;
+        }
+    }
 
     
     mSampleClock++;
@@ -301,6 +340,7 @@ private:
     double amp;
     double fadeLenSamples;
     fadeStates fadeState;
+    double speed;
 
     void startFadeIn() {
         ampMod = 1.0 / fadeLenSamples;
@@ -331,14 +371,10 @@ private:
   std::vector<distanceFunction> distanceFunctions;
   double sampleRate=44100;
   size_t mAudioRingLen;
-  // std::deque<RingBuf<double>::winBufType> segmentQueue;
-  // std::deque<double> segmentPosition;
-  // std::deque<double> segmentAmpMod;
-  // std::deque<double> segmentAmp;
-  // std::deque<double> segmentFadeLenSamples;
-  // std::deque<fadeStates> segmentFadeState;
-
   std::deque<soundSegment> mSegmentQ;
+
+  std::random_device rd;
+  std::mt19937 mtrand{rd()};
 
 };
 
@@ -348,6 +384,11 @@ private:
 } // namespace fluid
 
 
-//TODO NEXT:  compile various seqment queues into single queue + data structure
-// then (1) add in segment copy if current segment finishes on its own (2) fade out top segment when adding a new one
-// then (3) logic for moving history matching window
+
+/*
+0. auto new seg if running over time
+1. fadelen as percentage of buffer size?  but what if two different buffer size? maybe this won't work - prob needs to be constant
+2. speed adjust for fadelen
+3. pos adjust for -ve speed, init pos
+4. random choice of x closest matches
+*/
