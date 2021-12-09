@@ -173,12 +173,9 @@ public:
 
         soundSegment newSegment;
         newSegment.segmentAudio =  audioRingBuf.getBuffer(matchSize, matchStartOffset);
-        newSegment.position = 0;
+        newSegment.position = speed > 0 ? 0 : newSegment.segmentAudio.size() - 1;
         newSegment.fadeLenSamples = (fadeTime / 1000.0) * sampleRate;
         newSegment.speed = speed;
-        // newSegment.ampMod = 1.0 / newSegment.fadeLenSamples;
-        // newSegment.amp = 0.0;
-        // newSegment.fadeState = fadeStates::FADING_IN;
         newSegment.startFadeIn();
         mSegmentQ.push_back(newSegment);
         // cout << "new seg, q size: " << mSegmentQ.size() << ", amp: " << newSegment.amp << endl;
@@ -226,7 +223,7 @@ public:
           seqmentSample = (i0 * mSegmentQ[segIdx].segmentAudio[sampleIndex]) + (i1 * mSegmentQ[segIdx].segmentAudio[nextSampleIndex]);
         }else{
           size_t firstSampleIndex = sampleIndex-1;
-          if (firstSampleIndex < 0) {
+          if (firstSampleIndex == 0) {
             firstSampleIndex = mSegmentQ[segIdx].segmentAudio.size()-1;
           }
           double i1 = mSegmentQ[segIdx].position - sampleIndex;
@@ -277,13 +274,7 @@ public:
           break;
 
           case fadeStates::FADING_OUT:
-            //finished fading out?
-            // if (mSegmentQ[segIdx].amp <= 0.0) {
-            //   //remove segment
-            //   //TODO: fix bug - remove current seg, not front. Use iterator instead
-            //   mSegmentQ.pop_front();
-            // }
-
+            //nothing to see here
           break;
         }
 
@@ -386,8 +377,6 @@ private:
 
 
 /*
-0. auto new seg if running over time
-1. fadelen as percentage of buffer size?  but what if two different buffer size? maybe this won't work - prob needs to be constant
 2. speed adjust for fadelen
 3. pos adjust for -ve speed, init pos
 4. random choice of x closest matches
