@@ -31,9 +31,12 @@ namespace client {
 namespace ConcatClient {
 
 enum ConcatParamIndex {
-  kSegmentIn,
-  kFeatureIn,
-  kFeatureBuffer,
+  kControlSegmentIn,
+  kControlFeatureIn,
+  kSourceSegmentIn,
+  kSourceFeatureIn,
+  kControlFeatureBuffer,
+  kSourceFeatureBuffer,
   kMaxHistoryLength,
   kHistoryWindowLength,
   kHistoryWindowOffset,
@@ -45,9 +48,12 @@ enum ConcatParamIndex {
 
 
 constexpr auto ConcatParams = defineParameters(
-    FloatParam("segmentTrig", "segmentTrig", 0),
-    FloatParam("featureTrig", "featureTrig", 0),
-    BufferParam("featureBuffer", "Feature"),
+    FloatParam("controlSegmentTrig", "controlSegmentTrig", 0),
+    FloatParam("controlFeatureTrig", "controlFeatureTrig", 0),
+    FloatParam("sourceSegmentTrig", "sourceSegmentTrig", 0),
+    FloatParam("sourceFeatureTrig", "sourceFeatureTrig", 0),
+    BufferParam("controlFeatureBuffer", "Control Feature"),
+    BufferParam("sourceFeatureBuffer", "Source Feature"),
     LongParam("maxHistoryLength", "Max History Length (ms)", 100, Min(100)),
     LongParam("historyWindowLength", "History Window Length (ms)", 100, Min(100)),
     LongParam("historyWindowOffset", "History Window Offset (ms)", 100, Min(100)), 
@@ -78,7 +84,7 @@ public:
 
   ConcatClient(ParamSetViewType& p) : mParams(p)
   {
-    audioChannelsIn(3);
+    audioChannelsIn(5);
     audioChannelsOut(1);
     FluidBaseClient::setInputLabels({"audio input"});
     FluidBaseClient::setOutputLabels({"audio out"});
@@ -98,26 +104,38 @@ public:
     }
 
     // buffer checking
-    BufferAdaptor *featureBuf = get<kFeatureBuffer>().get();
-    if (!featureBuf) return;
+    BufferAdaptor *sourceFeatureBuf = get<kSourceFeatureBuffer>().get();
+    if (!sourceFeatureBuf) return;
+    BufferAdaptor *controlFeatureBuf = get<kControlFeatureBuffer>().get();
+    if (!controlFeatureBuf) return;
 
     //Q: Why doesn't this work with LocalBuf?
-    BufferAdaptor::ReadAccess buf(featureBuf);
-    if (!buf.exists() || !buf.valid())
+    BufferAdaptor::ReadAccess sourceBuf(sourceFeatureBuf);
+    if (!sourceBuf.exists() || !sourceBuf.valid())
+    {
+      return;
+    }
+    BufferAdaptor::ReadAccess controlBuf(controlFeatureBuf);
+    if (!controlBuf.exists() || !controlBuf.valid())
     {
       return;
     }
 
-    RealVector feature(buf.numFrames());
-    feature = buf.samps(0, buf.numFrames(), 0);
+    RealVector sourceFeatureVect(sourceBuf.numFrames());
+    sourceFeatureVect = sourceBuf.samps(0, sourceBuf.numFrames(), 0);
+    RealVector controlFeatureVect(controlBuf.numFrames());
+    controlFeatureVect = controlBuf.samps(0, controlBuf.numFrames(), 0);
 
     for (index i = 0; i < input[0].size(); i++)
     {
       output[0](i) = static_cast<T>(mAlgo.processSample(
-          input[0](i),   //audio in
-          input[1](i),   //segment trig
-          input[2](i),   //feature trig
-          feature,
+          input[0](i),   //audio source in
+          input[1](i),   //control segment trig
+          input[2](i),   //control feature trig
+          input[3](i),   //source segment trig
+          input[4](i),   //source feature trig
+          controlFeatureVect,
+          sourceFeatureVect,
           get<kHistoryWindowLength>(),
           get<kHistoryWindowOffset>(),
           get<kFadeTime>(),

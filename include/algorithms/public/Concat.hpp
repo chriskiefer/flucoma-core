@@ -68,7 +68,7 @@ public:
     using namespace std;
     sampleRate = pSampleRate;
     mInitialsed=1;
-    mFeatureAverageCount = 0;
+    mSourceFeatureAverageCount = 0;
     mAudioRingLen = static_cast<size_t>(maxHistoryLength / 1000 * sampleRate);
     audioRingBuf.setSize(mAudioRingLen);
     cout << "Init ring buf " << mAudioRingLen << endl;
@@ -78,8 +78,11 @@ public:
 
   bool isInitialised() {return mInitialsed;}
   
-  double processSample(const double audioIn, double segmentTrig, const double featureTrig, 
-    RealVector &feature, 
+  double processSample(const double sourceIn, 
+    double controlSegmentTrig, const double controlFeatureTrig, 
+    double sourceSegmentTrig, const double sourceFeatureTrig, 
+    RealVector &controlFeature, 
+    RealVector &sourceFeature, 
     const long historyWindowLength, const long historyWindowOffset, 
     const double fadeTime, const double speed, const unsigned int matchingAlgo,
     const double randomness)
@@ -88,31 +91,66 @@ public:
     double audioOut = 0.0;
     if (mFirst) {
       mFirst=0;
-      mLastFeatureTrig = featureTrig;
-      mLastSegmentTrig = segmentTrig;
+      mLastControlFeatureTrig = controlFeatureTrig;
+      mLastControlSegmentTrig = controlSegmentTrig;
+      mLastSourceFeatureTrig = sourceFeatureTrig;
+      mLastSourceSegmentTrig = sourceSegmentTrig;
     }
-    //auto trig if starting to get too long
-    if (mSampleClock - segmentStartTS > (static_cast<size_t>(historyWindowLength / 1000) * sampleRate * 0.5)) {
-      segmentTrig=1;
+    //auto trig if feature segments get too long
+    if (mSampleClock - sourceSegmentStartTS > (static_cast<size_t>(historyWindowLength / 1000) * sampleRate * 0.5)) {
+      sourceSegmentTrig=1;
     }
 
     //-------------- ANALYSIS
-    //feature?
-    if (mLastFeatureTrig <= 0 && featureTrig > 0) {
-      if (mFirstFeature) {
-        mFirstFeature = 0;
-        mFeatureAvgBuffer = feature;
-        segmentStartTS =  mSampleClock;        
+    //--- averaging of features
+    //control feature?
+    if (mLastControlFeatureTrig <= 0 && controlFeatureTrig > 0) {
+      if (mFirstControlFeature) {
+        mFirstControlFeature = 0;
+        mControlFeatureAvgBuffer = controlFeature;
+        // controlSegmentStartTS =  mSampleClock;        
       }else {
         //add feature into averaging buffer
-        for(size_t i = 0;  i < mFeatureAvgBuffer.size(); i++)  mFeatureAvgBuffer[i] += feature[i];
+        for(size_t i = 0;  i < mControlFeatureAvgBuffer.size(); i++)  mControlFeatureAvgBuffer[i] += controlFeature[i];
       }
-      mFeatureAverageCount++;
+      mControlFeatureAverageCount++;
+    }
+    //source feature?
+    if (mLastSourceFeatureTrig <= 0 && sourceFeatureTrig > 0) {
+      if (mFirstSourceFeature) {
+        mFirstSourceFeature = 0;
+        mSourceFeatureAvgBuffer = sourceFeature;
+        sourceSegmentStartTS =  mSampleClock;        
+      }else {
+        //add feature into averaging buffer
+        for(size_t i = 0;  i < mSourceFeatureAvgBuffer.size(); i++)  mSourceFeatureAvgBuffer[i] += sourceFeature[i];
+      }
+      mSourceFeatureAverageCount++;
       // cout << mFeatureAvgBuffer << endl;
     }
+    
+    //source segmemt?
+    if (mLastSourceSegmentTrig <= 0 && sourceSegmentTrig > 0) {
+      //do averaging
+      double scale = mSourceFeatureAverageCount ? 1.0/mSourceFeatureAverageCount : 0;
+      for(size_t i = 0;  i < mSourceFeatureAvgBuffer.size(); i++)  mSourceFeatureAvgBuffer[i] *= scale;
+      // audioOut = mSourceFeatureAvgBuffer[0];
+      
+      //add feature to db
+      db.push_back(mSourceFeatureAvgBuffer);
+      timestamps.push_back(sourceSegmentStartTS);
+      // cout << "Pushing feature, db size " << db.size() << endl;
 
-    //segment?
-    if (mLastSegmentTrig <= 0 && segmentTrig > 0) {
+      //clear averaging buffer
+      mSourceFeatureAverageCount = 0;
+      for(size_t i = 0;  i < mSourceFeatureAvgBuffer.size(); i++)  mSourceFeatureAvgBuffer[i] = 0;
+      sourceSegmentStartTS =  mSampleClock;
+
+    }
+
+
+    //control segment?
+    if (mLastControlSegmentTrig <= 0 && controlSegmentTrig > 0) {
 
       //remove old features from db, before matching
       if (timestamps.size() > 0) {
@@ -120,14 +158,13 @@ public:
         while (mSampleClock - timestamps[0] > mAudioRingLen) {
           timestamps.pop_front();
           db.pop_front();
-          // cout << "Removed old feature\n";
         }
       }
 
       //do averaging
-      double scale = mFeatureAverageCount ? 1.0/mFeatureAverageCount : 0;
-      for(size_t i = 0;  i < mFeatureAvgBuffer.size(); i++)  mFeatureAvgBuffer[i] *= scale;
-      audioOut = mFeatureAvgBuffer[0];
+      double scale = mControlFeatureAverageCount ? 1.0/mControlFeatureAverageCount : 0;
+      for(size_t i = 0;  i < mControlFeatureAvgBuffer.size(); i++)  mControlFeatureAvgBuffer[i] *= scale;
+      // audioOut = mSourceFeatureAvgBuffer[0];
       
       //search DB for best match 
       if (db.size() > 0) {
@@ -135,14 +172,14 @@ public:
         double minDist = std::numeric_limits<double>::max();
         size_t selectedSegment=0;
         size_t offsetInSamples = (static_cast<size_t>(historyWindowOffset / 1000) * sampleRate);
-        size_t searchWindowStart = segmentStartTS > offsetInSamples ? segmentStartTS - offsetInSamples : 0;
+        size_t searchWindowStart = sourceSegmentStartTS > offsetInSamples ? sourceSegmentStartTS - offsetInSamples : 0;
         size_t searchWindowEnd = searchWindowStart + (static_cast<size_t>(historyWindowLength / 1000) * sampleRate);
         // cout << "searching from " << searchWindowStart << " to " << searchWindowEnd << endl;
         //keep list of distances for random selection
         std::vector< std::pair<double, size_t> > distances;
         for (size_t i_db=0; i_db < db.size(); i_db++) {
           if (timestamps[i_db] >= searchWindowStart && timestamps[i_db] < searchWindowEnd) {
-            double dist = distanceFunctions[matchingAlgo](mFeatureAvgBuffer, db[i_db]);
+            double dist = distanceFunctions[matchingAlgo](mControlFeatureAvgBuffer, db[i_db]);
             if (dist < minDist) {
               minDist = dist;
               selectedSegment = i_db;
@@ -151,22 +188,22 @@ public:
               distances.push_back(std::make_pair(dist, i_db));
             }
           }
-          // cout << dist << ",";
         }
         if (randomness > 0.0) {
           std::sort(distances.begin(), distances.end());
           size_t maxIndex = static_cast<size_t>(round((distances.size()-1) * randomness));
           std::uniform_int_distribution<int> distribution(0,maxIndex);
           selectedSegment = distribution(mtrand);
-          cout << "r: " << selectedSegment << endl;
+          // cout << "r: " << selectedSegment << endl;
         }
         // cout << endl;
         //segmentstartTS marks the end of the last segment in the database
-        size_t matchStartOffset = segmentStartTS - timestamps[selectedSegment];
+        size_t matchStartOffset = sourceSegmentStartTS - timestamps[selectedSegment];
         size_t matchSize = selectedSegment == db.size()-1 ? matchStartOffset : timestamps[selectedSegment+1] - timestamps[selectedSegment];
         // cout << "Match: " << closest << "/" << db.size() << "; win: " << matchSize << "; offs: "  << matchStartOffset << endl;
 
         //fade out the other segments in the queue
+        
         for(size_t segIdx = 0; segIdx < mSegmentQ.size(); segIdx++) {
           mSegmentQ[segIdx].startFadeOut();
         }
@@ -180,33 +217,25 @@ public:
         mSegmentQ.push_back(newSegment);
         // cout << "new seg, q size: " << mSegmentQ.size() << ", amp: " << newSegment.amp << endl;
 
-
-
       }
 
-
-
-      //add feature to db
-      db.push_back(mFeatureAvgBuffer);
-      timestamps.push_back(segmentStartTS);
-      // cout << "Pushing feature, db size " << db.size() << endl;
-
-
-
       //clear averaging buffer
-      mFeatureAverageCount = 0;
-      for(size_t i = 0;  i < mFeatureAvgBuffer.size(); i++)  mFeatureAvgBuffer[i] = 0;
-      segmentStartTS =  mSampleClock;
+      mControlFeatureAverageCount = 0;
+      for(size_t i = 0;  i < mControlFeatureAvgBuffer.size(); i++)  mControlFeatureAvgBuffer[i] = 0;
+      // controlSegmentStartTS =  mSampleClock;
 
 
 
     }
 
-    mLastSegmentTrig = segmentTrig;
-    mLastFeatureTrig = featureTrig;
+
+    mLastControlSegmentTrig = controlSegmentTrig;
+    mLastControlFeatureTrig = controlFeatureTrig;
+    mLastSourceSegmentTrig = sourceSegmentTrig;
+    mLastSourceFeatureTrig = sourceFeatureTrig;
 
     //-------------- SYNTHESIS
-    audioRingBuf.push(audioIn);
+    audioRingBuf.push(sourceIn);
 
     if (mSegmentQ.size() > 0) {
       audioOut = 0;
@@ -289,14 +318,8 @@ public:
         }else if (mSegmentQ[segIdx].position < 0){
           mSegmentQ[segIdx].position=0;
         }
-        //loop if necessary
-        // if (mSegmentQ[segIdx].position >= mSegmentQ[segIdx].segmentAudio.size()) {
-        //   mSegmentQ[segIdx].position -= mSegmentQ[segIdx].segmentAudio.size();
-        // }else if (mSegmentQ[segIdx].position < 0){
-        //   mSegmentQ[segIdx].position += mSegmentQ[segIdx].segmentAudio.size();
-        // }
-        
         audioOut += seqmentSample;
+
       }
 
     }else{
@@ -346,16 +369,22 @@ private:
   };
   RingBuf<double> audioRingBuf;
   bool mInitialsed = 0;
-  bool mFirstFeature=1;
+  bool mFirstSourceFeature=1;
+  bool mFirstControlFeature=1;
   bool mFirstSegment=1;
   bool mFirst=1;
-  RealVector mFeatureAvgBuffer;
-  size_t mFeatureAverageCount;
-  double mLastSegmentTrig;
-  double mLastFeatureTrig;
+  RealVector mSourceFeatureAvgBuffer;
+  RealVector mControlFeatureAvgBuffer;
+  size_t mSourceFeatureAverageCount;
+  size_t mControlFeatureAverageCount;
+  double mLastSourceSegmentTrig;
+  double mLastSourceFeatureTrig;
+  double mLastControlSegmentTrig;
+  double mLastControlFeatureTrig;
   std::deque<RealVector> db;
   std::deque<size_t> timestamps;
-  size_t segmentStartTS=0;
+  // size_t controlSegmentStartTS=0;
+  size_t sourceSegmentStartTS=0;
   size_t mSampleClock=0;
   distanceFunction euclideanDistance;
   distanceFunction cosineDistance;
@@ -377,7 +406,5 @@ private:
 
 
 /*
-2. speed adjust for fadelen
-3. pos adjust for -ve speed, init pos
-4. random choice of x closest matches
+TODO: separate out into contro and source signals
 */
