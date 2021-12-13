@@ -32,10 +32,7 @@ public:
         buf.fill(0);
         currBuf.resize(512);
     }
-    // RingBuf(size_t W) {
-    //     buf.resize(W);
-    //     buf.fill(0);
-    // }
+
     void setSize(size_t size) {
         buf.resize(size);
         buf.fill(0);
@@ -52,30 +49,30 @@ public:
     
     size_t size() {return buf.size();}
     
-    winBufType& getBuffer(const unsigned int winSize, const unsigned int offset = 0) {
+    winBufType& getBuffer(const size_t winSize, const size_t offset = 0) {
         if (winSize != buf.size())
           currBuf.resize(winSize);
         
         int targidx=0;
-        const unsigned int winAndOffset = winSize + offset;
+        const size_t winAndOffset = winSize + offset;
         if (idx > winAndOffset) {
-            for(int i=idx-winAndOffset; i < idx-offset; i++, targidx++) {
+            for(size_t i=idx-winAndOffset; i < idx-offset; i++, targidx++) {
                 currBuf[targidx] = buf[i];
             }
         }else{
-            unsigned int winStart = buf.size()-(winAndOffset-idx);
-            unsigned int winEnd1 = winStart + winSize;
-            unsigned int winEnd2 = 0;
+            size_t winStart = buf.size()-(winAndOffset-idx);
+            size_t winEnd1 = winStart + winSize;
+            size_t winEnd2 = 0;
             if (winEnd1 > buf.size()) {
                 winEnd2 = winEnd1 - buf.size();
                 winEnd1 = buf.size();
             }
             //first chunk
-            for(int i=winStart; i < winEnd1; i++, targidx++) {
+            for(size_t i=winStart; i < winEnd1; i++, targidx++) {
                 currBuf[targidx] = buf[i];
             }
             //second chunk
-            for(int i=0; i < winEnd2; i++, targidx++) {
+            for(size_t i=0; i < winEnd2; i++, targidx++) {
                 currBuf[targidx] = buf[i];
             }
         }

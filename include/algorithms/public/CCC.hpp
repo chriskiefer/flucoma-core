@@ -9,7 +9,6 @@ under the European Union’s Horizon 2020 research and innovation programme
 
 */
 
-//TODO: pass thru ringbuf size param
 
 #pragma once
 
@@ -28,24 +27,25 @@ namespace algorithm {
 
 class ShannonEntropy
 {
-  using ivec = Eigen::Array<unsigned int, Eigen::Dynamic, 1>;
-  using ArrayXd = Eigen::ArrayXd;
-  using histoMap= std::unordered_map<int, unsigned int>;
+  using ArrayXL = Eigen::Array<int64_t, Eigen::Dynamic, 1>; 
+  using histoMap= std::unordered_map<int64_t, unsigned int>;
 
 public:
   ShannonEntropy()
   {
   }
 
-  void init()
+  void init(const double sampleRate, double maxWindowSize)
   {
-    using namespace std;
+    mSampleRate = sampleRate;
+    mMaxWindowSize = static_cast<size_t>(maxWindowSize / 1000.0 * mSampleRate);
+    ringBuf.setSize(mMaxWindowSize);
     mInitialsed=1;
   }
 
   bool isInitialised() {return mInitialsed;}
 
-  double processSample(const double in, const double symbolCount, const long hopSize)
+  double processSample(const double in, const long symbolCount, const double windowSize, const double hopSize)
   {
     using namespace std;
     //symbolise
@@ -58,32 +58,32 @@ public:
     unsigned int inSym = static_cast<unsigned int>(inNorm * symbolCount);
     ringBuf.push(inSym);
     hopCounter++;
-    if (hopCounter >= hopSize) {
+    size_t hopSizeInSamples = static_cast<size_t>(hopSize / 1000.0 * mSampleRate);
+    if (hopCounter >= min(hopSizeInSamples,mMaxWindowSize)) {
       hopCounter=0;
-      auto window = ringBuf.getBuffer(256);
-      entropy = calcFromWindow(window);
+      size_t windowSizeInSamples = static_cast<size_t>(windowSize / 1000.0 * mSampleRate);
+      auto window = ringBuf.getBuffer(min(windowSizeInSamples, mMaxWindowSize));
+      entropy = calc(window);
     }
     return entropy;
   }
 
   index getLatency() { return 0; }
-//   bool  initialized() { return mInitialized; }
 
-
-  histoMap calcDistribution(const ivec &seq) {
+  histoMap calcDistribution(const ArrayXL &seq) {
       histoMap histo;
-      for (auto v: seq) {
+      for (const uint64_t &v: seq) {
           histoMap::iterator it = histo.find(v);
           if (it == histo.end()) {
-              histo.insert(std::make_pair<int, unsigned int>(std::move(v), 1));
+              histo.insert(std::make_pair(v, 1));
           }else{
               it->second = it->second + 1;
           }
       }
       return histo;
   }
-
-  double calcProbability(const histoMap &histo, const ivec &seq) {
+  
+  double calcProbability(const histoMap &histo, const ArrayXL &seq) {
       double scale = 1.0 / seq.size();
       double H=0;
       for(auto v: histo) {
@@ -92,18 +92,20 @@ public:
       }
       return H;
   }
-
-  double calcFromWindow(const ivec &seq) {
+  
+  double calc(const ArrayXL &seq) {
       histoMap histo = calcDistribution(seq);
       double prob = calcProbability(histo, seq);
       return prob;
   }
 
 private:
-  RingBuf<unsigned int> ringBuf;
+  RingBuf<int64_t> ringBuf;
   size_t hopCounter=0;
   double entropy=0;
   bool mInitialsed = 0;
+  size_t mMaxWindowSize;
+  double mSampleRate;
 };
 
 

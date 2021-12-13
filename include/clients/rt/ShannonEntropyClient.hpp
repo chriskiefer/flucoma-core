@@ -33,9 +33,9 @@ enum ShannonEntropyParamIndex {
 
 constexpr auto ShannonEntropyParams = defineParameters(
     LongParam("symbolCount", "Symbol Count", 1, Min(1)),
-    LongParam("winSize", "Window Size", 512, Min(4)),
-    LongParam("maxWinSize", "Maximum Window Size", 512, Min(4)),
-    LongParam("hopSize", "Hop Size", 256, Min(4))
+    FloatParam("winSize", "Window Size (ms)", 512, Min(4)),
+    FloatParam("maxWinSize", "Maximum Window Size (ms)", 512, Min(4)),
+    FloatParam("hopSize", "Hop Size (ms)", 256, Min(4))
 );
 
 class ShannonEntropyClient : public FluidBaseClient, public AudioIn, public AudioOut
@@ -74,7 +74,7 @@ public:
 
     if (!mAlgo.isInitialised())
     { 
-      mAlgo.init(); 
+      mAlgo.init(sampleRate(), get<kMaxWinSize>()); 
     }
 
     for (index i = 0; i < input[0].size(); i++)
@@ -82,6 +82,7 @@ public:
       output[0](i) = static_cast<T>(mAlgo.processSample(
           input[0](i), 
           get<kSymCount>(),  
+          get<kWinSize>(),
           get<kHopSize>()
       ));
     }
