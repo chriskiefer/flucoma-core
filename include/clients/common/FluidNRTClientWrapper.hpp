@@ -43,14 +43,14 @@ template <typename B>
 auto constexpr makeWrapperInputs(B b1, B b2)
 {
   return defineParameters(
-      std::forward<B>(b1), LongParam("startFrame", "Source Offset", 0, Min(0)),
-      LongParam("numFrames", "Number of Frames", -1),
-      LongParam("startChan", "Start Channel", 0, Min(0)),
-      LongParam("numChans", "Number of Channels", -1), std::forward<B>(b2),
-      LongParam("startFrameB", "Source Offset B", 0, Min(0)),
-      LongParam("numFramesB", "Number of Frames B", -1),
-      LongParam("startChanB", "Start Channel B", 0, Min(0)),
-      LongParam("numChansB", "Number of Channels B", -1));
+      std::forward<B>(b1), LongParam("startFrameA", "Source A Offset", 0, Min(0)),
+      LongParam("numFramesA", "Source A Number of Frames", -1),
+      LongParam("startChanA", "Source A Start Channel", 0, Min(0)),
+      LongParam("numChansA", "Source A Number of Channels", -1), std::forward<B>(b2),
+      LongParam("startFrameB", "Source B Offset", 0, Min(0)),
+      LongParam("numFramesB", "Source B Number of Frames", -1),
+      LongParam("startChanB", "Source B Start Channel", 0, Min(0)),
+      LongParam("numChansB", "Source B Number of Channels", -1));
 }
 
 template <typename... B>
@@ -538,7 +538,7 @@ struct StreamingControl
     index startPadding = client.latency() + userPadding.first;
 
     index totalPadding = startPadding + userPadding.first;
-    index controlRate = client.controlRate();
+    index controlRate = client.analysisSettings().hop;
 
     index paddedLength = nFrames + totalPadding;
 
@@ -548,10 +548,9 @@ struct StreamingControl
       paddedLength =
           static_cast<index>(std::ceil(double(paddedLength) / controlRate) * controlRate);
 
-    // Fix me. This assumes that client.latency() is always the window size of
-    // whatever buffered process we're wrapping, which seems well dodgy
-    index nHops =
-        static_cast<index>(1 + std::floor((paddedLength - client.latency()) / controlRate));
+    index windowSize = client.analysisSettings().window;
+    index nHops = static_cast<index>(
+        1 + std::floor((paddedLength - windowSize) / controlRate));
 
     // in contrast to the plain streaming case, we're going to call process()
     // iteratively with a vector size = the control vector size, so we get KR
@@ -608,7 +607,7 @@ struct StreamingControl
 
     BufferAdaptor::Access thisOutput(outputBuffers[0]);
 
-    index latencyHops = client.latency() / client.controlRate();
+    index latencyHops = client.latency() / controlRate;
     index keepHops = nHops - latencyHops;
 
     Result resizeResult = thisOutput.resize(keepHops, nChans * nFeatures,

@@ -10,11 +10,10 @@ under the European Union’s Horizon 2020 research and innovation programme
 
 #pragma once
 
-namespace fluid{
-namespace client{
-  inline const char* fluidVersion()
-  {
-    return "1.0.0-TB2.beta2"; 
-  }
-}
-}
+namespace fluid {
+namespace client {
+
+const char* fluidVersion();
+
+} // namespace client 
+} // namespace fluid
