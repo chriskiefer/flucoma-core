@@ -25,10 +25,18 @@ namespace client {
 namespace ETC {
 
 enum ETCParamIndex {
-
+  kSymCount,
+  kWinSize,
+  kMaxWinSize,
+  kHopSize
 };
 
-constexpr auto ETCParams = defineParameters();
+constexpr auto ETCParams = defineParameters(
+    LongParam("symbolCount", "Symbol Count", 1, Min(1)),
+    FloatParam("winSize", "Window Size (ms)", 512, Min(4)),
+    FloatParam("maxWinSize", "Maximum Window Size (ms)", 512, Min(4)),
+    FloatParam("hopSize", "Hop Size (ms)", 256, Min(4))
+);
 
 class ETCClient : public FluidBaseClient, public AudioIn, public AudioOut
 {
@@ -54,7 +62,7 @@ public:
     audioChannelsIn(1);
     audioChannelsOut(1);
     FluidBaseClient::setInputLabels({"audio input"});
-    FluidBaseClient::setOutputLabels({"audio output"});
+    FluidBaseClient::setOutputLabels({"Shannon Entropy"});
   }
 
   template <typename T>
@@ -64,17 +72,22 @@ public:
 
     if (!input[0].data() || !output[0].data()) return;
 
-    // if (!mAlgorithm.initialized())
-    // { mAlgorithm.init(get<kSilenceThreshold>(), hiPassFreq); }
-    // for (index i = 0; i < input[0].size(); i++)
-    // {
-    //   output[0](i) = static_cast<T>(mAlgorithm.processSample(
-    //       input[0](i), get<kOnThreshold>(), get<kOffThreshold>(),
-    //       get<kSilenceThreshold>(), get<kFastRampUpTime>(),
-    //       get<kSlowRampUpTime>(), get<kFastRampDownTime>(),
-    //       get<kSlowRampDownTime>(), hiPassFreq, get<kDebounce>()));
-    // }
+    if (!mAlgo.isInitialised())
+    { 
+      mAlgo.init(sampleRate(), get<kMaxWinSize>()); 
+    }
+
+    for (index i = 0; i < input[0].size(); i++)
+    {
+      output[0](i) = static_cast<T>(mAlgo.processSample(
+          input[0](i), 
+          get<kSymCount>(),  
+          get<kWinSize>(),
+          get<kHopSize>()
+      ));
+    }
   }
+
   index latency() { return 0; }
 
   void reset()
@@ -82,21 +95,11 @@ public:
   }
 
 private:
-//   algorithm::EnvelopeSegmentation mAlgorithm;
+  algorithm::ETC mAlgo;
 };
 } // namespace ampslice
 
 using RTETCClient = ClientWrapper<ETC::ETCClient>;
-
-// auto constexpr NRTAmpSliceParams = makeNRTParams<ampslice::AmpSliceClient>(
-//     InputBufferParam("source", "Source Buffer"),
-//     BufferParam("indices", "Indices Buffer"));
-
-// using NRTAmpSliceClient =
-//     NRTSliceAdaptor<ampslice::AmpSliceClient, decltype(NRTAmpSliceParams),
-//                     NRTAmpSliceParams, 1, 1>;
-
-// using NRTThreadedAmpSliceClient = NRTThreadingAdaptor<NRTAmpSliceClient>;
 
 } // namespace client
 } // namespace fluid
